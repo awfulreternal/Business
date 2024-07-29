@@ -1,0 +1,2 @@
+TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'
+DATABASE_URL = 'sqlite:///game.db'
