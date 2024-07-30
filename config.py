@@ -1,4 +1,4 @@
-TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'
+TOKEN = '7013013514:AAEaHQrlJFz3_i5n327qCQdXqERvn_NkL-A'
 
 CITY_IMAGES = {
     'small_town': 'path_to_images/small_town.jpg',
