@@ -1,110 +1,111 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import CallbackContext
-from database import create_user, get_user, get_business_levels
-from game_logic import spin, casino, dice, buy_business, upgrade_business
+from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler
+from game_data import init_player, get_player, set_position, get_position, update_inventory, craft_item, world, resources
 
 def start(update: Update, context: CallbackContext):
-    username = update.message.from_user.username
-    if not get_user(username):
-        create_user(username)
-    update.message.reply_text(
-        "🎮 Добро пожаловать в GameMaster! 🎮\n\n"
-        "Вы успешно зарегистрированы! 🎉\n"
-        "Здесь вы можете играть в игры, покупать бизнесы и зарабатывать рубли. 💸\n"
-        "Используйте команды для взаимодействия с ботом и наслаждайтесь игрой! 🚀"
-    )
-
-def balance(update: Update, context: CallbackContext):
-    username = update.message.from_user.username
-    user = get_user(username)
-    if user:
-        update.message.reply_text(f"Ваш баланс: {user.balance}₽")
+    user_id = update.message.from_user.id
+    keyboard = [
+        [InlineKeyboardButton("Играть", callback_data='start_game')],
+        [InlineKeyboardButton("Продолжить", callback_data='continue_game')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    if user_id not in get_player(user_id):
+        update.message.reply_text(
+            'Добро пожаловать в игру! Нажмите "Играть" для создания нового мира.',
+            reply_markup=reply_markup
+        )
     else:
-        update.message.reply_text("Вы не зарегистрированы!")
-
-def play_spin(update: Update, context: CallbackContext):
-    username = update.message.from_user.username
-    result = spin(username)
-    update.message.reply_text(result)
-
-def play_casino(update: Update, context: CallbackContext):
-    username = update.message.from_user.username
-    result = casino(username)
-    update.message.reply_text(result)
-
-def play_dice(update: Update, context: CallbackContext):
-    username = update.message.from_user.username
-    args = context.args
-    if len(args) != 2:
-        update.message.reply_text("Использование: кубик [число от 1 до 6] [ставка]")
-        return
-    guess = int(args[0])
-    if guess < 1 or guess > 6:
-        update.message.reply_text("Число должно быть от 1 до 6.")
-        return
-    try:
-        bet = float(args[1])
-    except ValueError:
-        update.message.reply_text("Ставка должна быть числом.")
-        return
-    result = dice(username, guess, bet)
-    update.message.reply_text(result)
-
-def buy(update: Update, context: CallbackContext):
-    username = update.message.from_user.username
-    args = context.args
-    if len(args) != 1:
-        update.message.reply_text("Использование: купить [бизнес]")
-        return
-    business = args[0]
-    result = buy_business(username, business)
-    update.message.reply_text(result)
-    if "купили бизнес" in result:
-        businesses = get_business_levels(username)
-        level = businesses.get(business, 1)
-        keyboard = [
-            [InlineKeyboardButton(f"Улучшить {business} (Уровень {level})", callback_data=f"upgrade_{business}")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        update.message.reply_text(f"{business} уровень {level}", reply_markup=reply_markup)
+        update.message.reply_text(
+            'Нажмите "Продолжить" для возобновления игры.',
+            reply_markup=reply_markup
+        )
 
 def button(update: Update, context: CallbackContext):
     query = update.callback_query
-    username = query.from_user.username
+    user_id = query.from_user.id
     query.answer()
     
-    if query.data.startswith("upgrade_"):
-        business = query.data.split("_")[1]
-        result = upgrade_business(username, business)
-        query.edit_message_text(text=result)
-        businesses = get_business_levels(username)
-        level = businesses.get(business, 1)
-        keyboard = [
-            [InlineKeyboardButton(f"Улучшить {business} (Уровень {level})", callback_data=f"upgrade_{business}")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        query.message.reply_text(f"{business} уровень {level}", reply_markup=reply_markup)
+    if query.data == 'start_game':
+        init_player(user_id)
+        query.edit_message_text(
+            'Игра началась! Вы находитесь в своём мире. Используйте /move <up|down|left|right> для перемещения, /inventory для просмотра инвентаря и /craft <item> для крафта.'
+        )
+    
+    elif query.data == 'continue_game':
+        player = get_player(user_id)
+        if player:
+            position = player['position']
+            inventory = player['inventory']
+            query.edit_message_text(
+                f'Ваше текущее положение: {position}. Ваш инвентарь: {inventory}. Используйте /move <up|down|left|right> для перемещения и /explore для исследования мира.'
+            )
+        else:
+            query.edit_message_text('Вы не начали игру. Нажмите "Играть" для начала новой игры.')
 
-def help_command(update: Update, context: CallbackContext):
-    help_text = (
-        "📖 Помощь по командам 📖\n\n"
-        "🎲 /start - Начать взаимодействие с ботом.\n"
-        "💰 /balance - Проверка своего баланса.\n"
-        "🏢 /buy бизнес (название бизнеса) - Купить бизнес.\n"
-        "🎰 /casino (сумма/все) - Играть в казино.\n"
-        "🎡 /spin (все/сумма) - Играть в игру «Спин».\n"
-        "🎲 /dice (число от 1 до 6)-(ставка все/сумма) - Играть в игру «Кубик».\n"
-    )
-    update.message.reply_text(help_text)
+def move(update: Update, context: CallbackContext):
+    user_id = update.message.from_user.id
+    if not get_player(user_id):
+        update.message.reply_text('Сначала используйте /start для начала игры.')
+        return
 
-def help_text_command(update: Update, context: CallbackContext):
-    help_text = (
-        "📖 Помощь по командам 📖\n\n"
-        "🎲 Начать - Начать взаимодействие с ботом.\n"
-        "💰 Баланс - Проверка своего баланса.\n"
-        "🏢 Купить бизнес [название бизнеса] - Купить бизнес.\n"
-        "🎰 Казино (сумма/все) - Играть в казино.\n"
-        "🎡 Спин (все/сумма) - Играть в игру «Спин».\n"
-        "🎲 Кубик (число от 1 до 6)-(ставка все/сумма) - Играть в игру «Кубик».\n"
+    direction = context.args[0] if context.args else None
+    if direction not in ['up', 'down', 'left', 'right']:
+        update.message.reply_text('Пожалуйста, используйте /move <up|down|left|right> для перемещения.')
+        return
+
+    x, y = get_position(user_id)
+    if direction == 'up':
+        y = min(y + 1, world_size - 1)
+    elif direction == 'down':
+        y = max(y - 1, 0)
+    elif direction == 'left':
+        x = max(x - 1, 0)
+    elif direction == 'right':
+        x = min(x + 1, world_size - 1)
+
+    set_position(user_id, (x, y))
+    update.message.reply_text(
+        f'Вы переместились на позицию {get_position(user_id)}. Используйте /explore для исследования мира.'
     )
-    update.message.reply_text(help_text)
+
+def explore(update: Update, context: CallbackContext):
+    user_id = update.message.from_user.id
+    if not get_player(user_id):
+        update.message.reply_text('Сначала используйте /start для начала игры.')
+        return
+
+    x, y = get_position(user_id)
+    resource = world[y][x]
+    if resource in resources:
+        update_inventory(user_id, resource)
+        update.message.reply_text(
+            f'Вы нашли {resources[resource]} {resource}! Ваш инвентарь: {get_player(user_id)["inventory"]}.'
+        )
+    else:
+        update.message.reply_text('Здесь нет ресурсов.')
+
+def inventory(update: Update, context: CallbackContext):
+    user_id = update.message.from_user.id
+    if not get_player(user_id):
+        update.message.reply_text('Сначала используйте /start для начала игры.')
+        return
+
+    inventory = get_player(user_id)['inventory']
+    items = ', '.join(f'{resources[item]} {item}: {quantity}' for item, quantity in inventory.items() if quantity > 0)
+    if items:
+        update.message.reply_text(f'Ваш инвентарь: {items}')
+    else:
+        update.message.reply_text('Ваш инвентарь пуст.')
+
+def craft(update: Update, context: CallbackContext):
+    user_id = update.message.from_user.id
+    if not get_player(user_id):
+        update.message.reply_text('Сначала используйте /start для начала игры.')
+        return
+
+    item = ' '.join(context.args)
+    if craft_item(user_id, item):
+        update.message.reply_text(f'Вы успешно создали {item}!')
+    else:
+        update.message.reply_text(f'Не удалось создать {item}. Убедитесь, что у вас есть все необходимые ресурсы и правильное название предмета.')
